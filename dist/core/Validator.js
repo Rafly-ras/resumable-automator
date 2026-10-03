@@ -74,41 +74,35 @@ class CodebaseVerifier {
         return results;
     }
     /**
-     * Verifikasi apakah sebuah tugas pada Markdown sudah ter-implementasi di dalam codebase aktual.
+     * Verifikasi modul/entity utama di codebase berdasarkan nama modul atau teks tugas.
      */
-    isTaskImplemented(taskText) {
-        const textLower = taskText.toLowerCase();
+    isModuleImplemented(moduleName) {
+        const textLower = moduleName.toLowerCase();
         const files = this.getAllProjectFiles();
-        // 1. Cek inisialisasi framework / setup dasar
-        if (textLower.includes('inisialisasi') || textLower.includes('setup') || textLower.includes('laravel')) {
+        // 1. Setup dasar framework
+        if (textLower.includes('laravel') || textLower.includes('fondasi')) {
             const hasComposer = files.some((f) => path.basename(f) === 'composer.json' || path.basename(f) === 'package.json');
             const hasArtisan = files.some((f) => path.basename(f) === 'artisan');
             if (hasComposer || hasArtisan)
                 return true;
         }
-        // 2. Ekstrak kata kunci penting dari teks tugas
-        const words = taskText.replace(/[^\w\s]/gi, '').split(/\s+/);
-        const stopWords = new Set([
-            'menu', 'tahap', 'sesuai', 'dasar', 'seluruh', 'isi', 'trd', 'pada', 'dan', 'dengan',
-            'untuk', 'yang', 'dalam', 'fitur', 'halaman', 'alur', 'proses', 'validasi', 'kriteria', 'penutupan'
-        ]);
-        const keywords = words.filter((w) => w.length > 2 && !stopWords.has(w.toLowerCase()));
-        if (keywords.length === 0) {
+        // 2. Ekstrak nama entity utama (misal: "Menu 11 Tahun Akademik" -> "tahunakademik" / "tahun" / "akademik")
+        const cleaned = moduleName.replace(/menu\s*\d+/gi, '').replace(/[^\w\s]/gi, '').trim();
+        const words = cleaned.split(/\s+/).filter((w) => w.length > 2 && !['tahap', 'fondasi', 'dasar', 'lanjutan', 'lengkap'].includes(w.toLowerCase()));
+        if (words.length === 0) {
             return false;
         }
-        // 3. Cari kata kunci pada nama-nama file di codebase
-        let matchCount = 0;
-        for (const keyword of keywords) {
-            const kwLower = keyword.toLowerCase();
+        // Cari apakah file controller, model, migration, atau view yang berhubungan sudah ada
+        for (const word of words) {
+            const wLower = word.toLowerCase();
             const match = files.some((filePath) => {
                 const baseName = path.basename(filePath).toLowerCase();
-                return baseName.includes(kwLower);
+                return baseName.includes(wLower);
             });
             if (match)
-                matchCount++;
+                return true;
         }
-        // Jika setidaknya 40% kata kunci ditemukan di codebase file, anggap ter-implementasi
-        return matchCount > 0 && matchCount >= Math.ceil(keywords.length * 0.4);
+        return false;
     }
 }
 exports.CodebaseVerifier = CodebaseVerifier;
@@ -120,8 +114,7 @@ class Validator {
     /**
      * Menganalisis konten Markdown dan memverifikasi kodenya di dalam codebase:
      * 1. Jika ada GFM Checkbox (- [x] / - [ ]), gunakan checkbox tersebut.
-     * 2. Jika berupa poin "- Item" di bawah "In Scope", lakukan pemindaian codebase aktual
-     *    untuk menentukan apakah item tersebut sudah diimplementasikan atau masih pending.
+     * 2. Jika berupa poin "- Item" di bawah "In Scope", periksa status modul utama pada codebase.
      */
     validateContent(content) {
         let totalTasks = 0;
@@ -141,15 +134,21 @@ class Validator {
                 pendingTasks.push(taskText);
             }
         }
-        // 2. Jika tidak ada GFM Checkbox, periksa poin-poin di bawah bagian "In Scope" dengan CodebaseVerifier
+        // 2. Jika tidak ada GFM Checkbox, periksa berdasarkan Modul & Codebase Verification
         if (totalTasks === 0) {
             const lines = content.split(/\r?\n/);
+            let currentSectionTitle = '';
             let inScopeSection = false;
             for (const line of lines) {
                 const trimmed = line.trim();
                 if (trimmed.startsWith('#')) {
+                    const headingText = trimmed.replace(/^#+\s*/, '');
                     if (/in\s*scope/i.test(trimmed) && !/out\s*of\s*scope/i.test(trimmed)) {
                         inScopeSection = true;
+                    }
+                    else if (trimmed.startsWith('## ') || trimmed.startsWith('# ')) {
+                        currentSectionTitle = headingText;
+                        inScopeSection = false;
                     }
                     else {
                         inScopeSection = false;
@@ -162,8 +161,9 @@ class Validator {
                         const itemText = bulletMatch[1].trim();
                         if (itemText && !itemText.startsWith('**')) {
                             totalTasks++;
-                            // Verifikasi apakah file/fitur ini sudah diimplementasikan di codebase
-                            const isImplemented = this.verifier.isTaskImplemented(itemText);
+                            // Verifikasi modul utama (misal: "Menu 10 Users", "Menu 8 Login", "Menu 18 Kelas")
+                            const targetModule = currentSectionTitle || itemText;
+                            const isImplemented = this.verifier.isModuleImplemented(targetModule);
                             if (isImplemented) {
                                 completedTasks++;
                             }
