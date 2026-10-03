@@ -88,10 +88,19 @@ export class CodebaseVerifier {
       'menu', 'tahap', 'fondasi', 'dasar', 'lanjutan', 'lengkap', 'master', 'project',
       'seluruh', 'isi', 'trd', 'pada', 'dan', 'dengan', 'untuk', 'yang', 'dalam', 'fitur',
       'halaman', 'alur', 'proses', 'validasi', 'kriteria', 'penutupan', 'in', 'scope', 'out', 'tabel', 'model',
-      'frontend', 'backend', 'routing', 'acceptance', 'criteria', 'relasi', 'crud', 'bulk', 'action'
+      'frontend', 'backend', 'routing', 'acceptance', 'criteria', 'crud', 'bulk', 'action'
     ]);
 
-    const keywords = cleaned.split(/\s+/).filter((w) => w.length > 3 && !stopWords.has(w.toLowerCase()));
+    let keywords = cleaned.split(/\s+/).filter((w) => w.length > 2 && !stopWords.has(w.toLowerCase()));
+
+    // Jika kata kunci dari item spesifik terfilter oleh stopWords (seperti "relasi dasar"), gunakan entity dari sectionTitle
+    if (keywords.length === 0 && sectionTitle) {
+      const cleanedSection = sectionTitle
+        .replace(/menu\s*\d+/gi, '')
+        .replace(/[^\w\s]/gi, ' ')
+        .trim();
+      keywords = cleanedSection.split(/\s+/).filter((w) => w.length > 2 && !stopWords.has(w.toLowerCase()));
+    }
 
     if (keywords.length === 0) {
       return false;
@@ -142,7 +151,6 @@ export class CodebaseVerifier {
       }
     }
 
-    // TANPA FALLBACK LOOSE! Jika tidak ditemukan di folder layer spesifik, return FALSE!
     return false;
   }
 }
