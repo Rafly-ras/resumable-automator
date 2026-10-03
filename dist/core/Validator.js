@@ -74,33 +74,45 @@ class CodebaseVerifier {
         return results;
     }
     /**
-     * Verifikasi modul/entity utama di codebase berdasarkan nama modul atau teks tugas.
+     * Verifikasi apakah modul/entity utama ada di codebase.
      */
-    isModuleImplemented(moduleName) {
-        const textLower = moduleName.toLowerCase();
+    isModuleImplemented(sectionTitle, itemText) {
+        const combinedText = `${sectionTitle} ${itemText}`.toLowerCase();
         const files = this.getAllProjectFiles();
         // 1. Setup dasar framework
-        if (textLower.includes('laravel') || textLower.includes('fondasi')) {
+        if (combinedText.includes('laravel') || combinedText.includes('fondasi project')) {
             const hasComposer = files.some((f) => path.basename(f) === 'composer.json' || path.basename(f) === 'package.json');
             const hasArtisan = files.some((f) => path.basename(f) === 'artisan');
             if (hasComposer || hasArtisan)
                 return true;
         }
-        // 2. Ekstrak nama entity utama (misal: "Menu 11 Tahun Akademik" -> "tahunakademik" / "tahun" / "akademik")
-        const cleaned = moduleName.replace(/menu\s*\d+/gi, '').replace(/[^\w\s]/gi, '').trim();
-        const words = cleaned.split(/\s+/).filter((w) => w.length > 2 && !['tahap', 'fondasi', 'dasar', 'lanjutan', 'lengkap'].includes(w.toLowerCase()));
-        if (words.length === 0) {
+        // 2. Filter kata kunci yang tidak berguna/terlalu umum (seperti "master", "lanjutan", "tahap")
+        const cleaned = combinedText
+            .replace(/menu\s*\d+/gi, '')
+            .replace(/[^\w\s]/gi, ' ')
+            .trim();
+        const stopWords = new Set([
+            'menu', 'tahap', 'fondasi', 'dasar', 'lanjutan', 'lengkap', 'master', 'project',
+            'seluruh', 'isi', 'trd', 'pada', 'dan', 'dengan', 'untuk', 'yang', 'dalam', 'fitur',
+            'halaman', 'alur', 'proses', 'validasi', 'kriteria', 'penutupan', 'in', 'scope', 'out'
+        ]);
+        const keywords = cleaned
+            .split(/\s+/)
+            .filter((w) => w.length > 2 && !stopWords.has(w.toLowerCase()));
+        if (keywords.length === 0) {
             return false;
         }
-        // Cari apakah file controller, model, migration, atau view yang berhubungan sudah ada
-        for (const word of words) {
-            const wLower = word.toLowerCase();
+        // Cari apakah ada file di codebase yang nama filenya mencakup salah satu kata kunci entity utama
+        // (misal: "semester", "dosen", "mahasiswa", "matakuliah", "kelas", "enrollment", "penilaian")
+        for (const keyword of keywords) {
+            const kwLower = keyword.toLowerCase();
             const match = files.some((filePath) => {
                 const baseName = path.basename(filePath).toLowerCase();
-                return baseName.includes(wLower);
+                return baseName.includes(kwLower);
             });
-            if (match)
+            if (match) {
                 return true;
+            }
         }
         return false;
     }
@@ -146,12 +158,11 @@ class Validator {
                     if (/in\s*scope/i.test(trimmed) && !/out\s*of\s*scope/i.test(trimmed)) {
                         inScopeSection = true;
                     }
-                    else if (trimmed.startsWith('## ') || trimmed.startsWith('# ')) {
-                        currentSectionTitle = headingText;
-                        inScopeSection = false;
-                    }
                     else {
-                        inScopeSection = false;
+                        currentSectionTitle = headingText;
+                        if (/out\s*of\s*scope/i.test(trimmed) || /kriteria/i.test(trimmed)) {
+                            inScopeSection = false;
+                        }
                     }
                     continue;
                 }
@@ -161,9 +172,8 @@ class Validator {
                         const itemText = bulletMatch[1].trim();
                         if (itemText && !itemText.startsWith('**')) {
                             totalTasks++;
-                            // Verifikasi modul utama (misal: "Menu 10 Users", "Menu 8 Login", "Menu 18 Kelas")
-                            const targetModule = currentSectionTitle || itemText;
-                            const isImplemented = this.verifier.isModuleImplemented(targetModule);
+                            // Verifikasi entity modul utama (misal: "Menu 12 Semester", "Menu 18 Kelas", "Menu 19 Enrollment")
+                            const isImplemented = this.verifier.isModuleImplemented(currentSectionTitle, itemText);
                             if (isImplemented) {
                                 completedTasks++;
                             }
