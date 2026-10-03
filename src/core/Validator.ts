@@ -56,15 +56,19 @@ export class CodebaseVerifier {
   /**
    * Mengklasifikasikan layer arsitektur tugas (Frontend, Backend, atau Database/Integration)
    */
-  getTaskLayer(taskText: string): 'FE' | 'BE' | 'DB' {
-    const text = taskText.toLowerCase();
+  getTaskLayer(taskText: string, sectionTitle: string = ''): 'FE' | 'BE' | 'DB' | 'BE_DB' {
+    const combined = `${sectionTitle} ${taskText}`.toLowerCase();
 
-    if (/frontend|view|halaman|tampilan|blade|ui|form|popup|dropdown|layout|component/i.test(text)) {
+    if (/frontend|view|halaman|tampilan|blade|ui|form|popup|dropdown|layout|component/i.test(combined)) {
       return 'FE';
     }
 
-    if (/migration|tabel|table|database|seeder|route|routing|queue|job|failed_jobs|unique|constraint/i.test(text)) {
+    if (/migration|tabel|table|database|seeder|route|routing|queue|job|failed_jobs|unique|constraint/i.test(combined)) {
       return 'DB';
+    }
+
+    if (/relasi|access|access_user|user_access/i.test(combined)) {
+      return 'BE_DB';
     }
 
     return 'BE';
@@ -74,7 +78,7 @@ export class CodebaseVerifier {
    * Memeriksa secara STRICT apakah komponen kode (FE, BE, atau DB) benar-benar ada di folder arsitektur yang sesuai
    */
   isTaskImplementedInCodebase(sectionTitle: string, taskText: string): boolean {
-    const layer = this.getTaskLayer(taskText);
+    const layer = this.getTaskLayer(taskText, sectionTitle);
     const files = this.getAllProjectFiles();
 
     const stopWords = new Set([
@@ -84,7 +88,7 @@ export class CodebaseVerifier {
       'frontend', 'backend', 'routing', 'acceptance', 'criteria', 'crud', 'bulk', 'action', 'relasi'
     ]);
 
-    // 1. Ekstrak kata kunci entity utama dari sectionTitle dan taskText
+    // 1. Ekstrak kata kunci entity utama dari taskText dan sectionTitle
     const cleanedTask = taskText.replace(/[^\w\s]/gi, ' ').trim();
     let taskKeywords = cleanedTask.split(/\s+/).filter((w) => w.length > 2 && !stopWords.has(w.toLowerCase()));
 
@@ -94,7 +98,7 @@ export class CodebaseVerifier {
       .trim();
     const sectionKeywords = cleanedSection.split(/\s+/).filter((w) => w.length > 2 && !stopWords.has(w.toLowerCase()));
 
-    // Gabungkan kata kunci (prioritaskan section entity jika taskKeywords kosong atau berisi istilah umum)
+    // Gabungkan kata kunci
     let targetKeywords = taskKeywords.length > 0 ? taskKeywords : sectionKeywords;
     if (targetKeywords.length === 0) {
       targetKeywords = sectionKeywords;
@@ -104,70 +108,66 @@ export class CodebaseVerifier {
       return false;
     }
 
-    // 2. Strict Check per Layer: Cek apakah ada file entity yang sesuai di folder layer
-    for (const kw of targetKeywords) {
-      const kwLower = kw.toLowerCase();
+    const checkLayerMatch = (keywordsToCheck: string[]): boolean => {
+      for (const kw of keywordsToCheck) {
+        const kwLower = kw.toLowerCase();
 
-      const match = files.some((filePath) => {
-        const baseName = path.basename(filePath).toLowerCase();
-        const relPath = path.relative(this.projectRoot, filePath).toLowerCase().replace(/\\/g, '/');
-
-        if (!baseName.includes(kwLower) && !relPath.includes(kwLower)) {
-          return false;
-        }
-
-        if (layer === 'FE') {
-          return (
-            relPath.includes('views') ||
-            relPath.includes('components') ||
-            baseName.endsWith('.blade.php') ||
-            baseName.endsWith('.vue') ||
-            baseName.endsWith('.jsx')
-          );
-        } else if (layer === 'DB') {
-          return (
-            relPath.includes('migrations') ||
-            relPath.includes('seeders') ||
-            relPath.includes('routes')
-          );
-        } else {
-          return (
-            relPath.includes('controllers') ||
-            relPath.includes('models') ||
-            relPath.includes('services') ||
-            relPath.includes('requests') ||
-            relPath.includes('policies')
-          );
-        }
-      });
-
-      if (match) {
-        return true;
-      }
-    }
-
-    // 3. Fallback ke Section Entity jika taskSpecific file belum ketemu (misal: "Relasi dasar" di bawah Menu 19 Enrollment)
-    if (sectionKeywords.length > 0) {
-      for (const skw of sectionKeywords) {
-        const skwLower = skw.toLowerCase();
-        const matchSection = files.some((filePath) => {
+        const match = files.some((filePath) => {
           const baseName = path.basename(filePath).toLowerCase();
           const relPath = path.relative(this.projectRoot, filePath).toLowerCase().replace(/\\/g, '/');
 
-          if (!baseName.includes(skwLower) && !relPath.includes(skwLower)) return false;
+          if (!baseName.includes(kwLower) && !relPath.includes(kwLower)) {
+            return false;
+          }
 
           if (layer === 'FE') {
-            return relPath.includes('views') || relPath.includes('components') || baseName.endsWith('.blade.php');
+            return (
+              relPath.includes('views') ||
+              relPath.includes('components') ||
+              baseName.endsWith('.blade.php') ||
+              baseName.endsWith('.vue') ||
+              baseName.endsWith('.jsx')
+            );
           } else if (layer === 'DB') {
-            return relPath.includes('migrations') || relPath.includes('seeders') || relPath.includes('routes');
+            return (
+              relPath.includes('migrations') ||
+              relPath.includes('seeders') ||
+              relPath.includes('routes')
+            );
+          } else if (layer === 'BE_DB') {
+            return (
+              relPath.includes('controllers') ||
+              relPath.includes('models') ||
+              relPath.includes('migrations') ||
+              relPath.includes('services')
+            );
           } else {
-            return relPath.includes('controllers') || relPath.includes('models') || relPath.includes('services');
+            return (
+              relPath.includes('controllers') ||
+              relPath.includes('models') ||
+              relPath.includes('services') ||
+              relPath.includes('requests') ||
+              relPath.includes('policies')
+            );
           }
         });
 
-        if (matchSection) {
+        if (match) {
           return true;
         }
+      }
+      return false;
+    };
+
+    // 2. Strict Check kata kunci spesifik
+    if (checkLayerMatch(targetKeywords)) {
+      return true;
+    }
+
+    // 3. Fallback ke Section Entity jika belum ketemu
+    if (sectionKeywords.length > 0) {
+      if (checkLayerMatch(sectionKeywords)) {
+        return true;
       }
     }
 
@@ -231,7 +231,7 @@ export class Validator {
           const itemText = bulletMatch[1].trim();
           if (itemText && !itemText.startsWith('**')) {
             totalTasks++;
-            const layer = this.verifier.getTaskLayer(itemText);
+            const layer = this.verifier.getTaskLayer(itemText, currentSectionTitle);
 
             if (layer === 'FE') totalFE++;
             else if (layer === 'DB') totalDB++;
