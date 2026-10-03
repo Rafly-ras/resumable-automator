@@ -50,18 +50,20 @@ async function getPhases() {
     return await orchestrator.loadPhasesFromProject(process.cwd());
 }
 /**
- * Helper Auto-Sync: Memastikan jika ada fase-fase awal yang sudah 100% selesai (misal hasil clone repo baru),
- * state akan otomatis melompat (Fast-Forward) ke fase pertama yang masih memiliki tugas pending.
+ * Helper Auto-Sync:
+ * Otomatis melompati (Fast-Forward) fase-fase yang tidak memiliki tugas pending
+ * (misal fase yang 100% selesai atau bagian heading pembuka tanpa checklist/poin tugas)
+ * sehingga CLI langsung mendarat pada fase aktif yang benar-benar memerlukan pengerjaan.
  */
 async function ensureAutoSyncedState() {
     let state = await stateManager.loadState();
     const phases = await getPhases();
     let skippedCount = 0;
-    while (state.currentPhaseIndex < phases.length) {
+    while (state.currentPhaseIndex < phases.length - 1) {
         const activePhase = phases[state.currentPhaseIndex];
         const validation = validator.validateContent(activePhase.content);
-        // Jika fase saat ini 100% selesai dan masih ada fase berikutnya, auto advance
-        if (validation.progressPercentage === 100 && validation.totalTasks > 0 && state.currentPhaseIndex < phases.length - 1) {
+        // Jika fase saat ini tidak memiliki pending tasks (tugas 0/0 atau sudah 100%), auto advance
+        if (validation.pendingTasks.length === 0) {
             state = await stateManager.advancePhase();
             skippedCount++;
         }
@@ -70,7 +72,7 @@ async function ensureAutoSyncedState() {
         }
     }
     if (skippedCount > 0) {
-        console.log(`⚡ [Auto-Sync] Otomatis melompati ${skippedCount} fase yang telah 100% selesai.\n`);
+        console.log(`⚡ [Auto-Sync] Otomatis melompati ${skippedCount} bagian/fase tanpa tugas pending.\n`);
     }
     return { state, phases };
 }
@@ -151,7 +153,7 @@ program
         }
         const activePhase = phases[state.currentPhaseIndex];
         const validation = validator.validateContent(activePhase.content);
-        if (validation.progressPercentage < 100) {
+        if (validation.progressPercentage < 100 && validation.totalTasks > 0) {
             console.error('\n⛔ EXECUTION FAILED: Transisi Fase Ditolak!');
             console.error(`Progression saat ini: ${validation.progressPercentage}% (${validation.completedTasks}/${validation.totalTasks} tugas completed)`);
             console.error(`File Source: ${path.basename(activePhase.filePath)}`);
@@ -162,7 +164,7 @@ program
             console.error('\nSelesaikan seluruh tugas pending sebelum melanjut ke fase berikutnya.\n');
             process.exit(1);
         }
-        console.log(`\n✅ Phase [${activePhase.title}] (${path.basename(activePhase.filePath)}) divalidasi sempurna (100%).`);
+        console.log(`\n✅ Phase [${activePhase.title}] (${path.basename(activePhase.filePath)}) divalidasi sempurna.`);
         const nextState = await stateManager.advancePhase();
         console.log(`🔓 Gerbang menuju fase selanjutnya (Index: ${nextState.currentPhaseIndex}) telah dibuka!\n`);
     }
@@ -173,7 +175,7 @@ program
 });
 program
     .command('sync')
-    .description('Fast-forward otomatis melewati seluruh fase yang sudah 100% selesai')
+    .description('Fast-forward otomatis melewati seluruh fase yang tanpa tugas pending')
     .action(async () => {
     try {
         const { state, phases } = await ensureAutoSyncedState();
