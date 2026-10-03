@@ -39,26 +39,28 @@ const path = __importStar(require("path"));
 class CodebaseVerifier {
     projectRoot;
     fileCache = null;
-    // Kamus Pemetaan Bahasa & Istilah Teknis (Bahasa Indonesia <> English/Laravel Standard)
-    synonymMap = {
-        pengaturan: ['setting', 'settings', 'config', 'configuration', 'option', 'options', 'pengaturan'],
-        notifikasi: ['notification', 'notifications', 'notice', 'alert', 'queue', 'job', 'notifikasi'],
-        pengguna: ['user', 'users', 'account', 'accounts', 'pengguna'],
-        login: ['auth', 'login', 'authentication', 'session', 'masuk'],
-        dashboard: ['dashboard', 'home', 'main', 'beranda'],
-        tahunakademik: ['academicyear', 'schoolyear', 'tahunakademik', 'tahun_akademik', 'academic_year', 'tahun'],
-        programstudi: ['studyprogram', 'prodi', 'programstudi', 'program_studi', 'department', 'dept'],
-        tatausaha: ['tatausaha', 'tata_usaha', 'tu', 'staff', 'admin'],
-        semester: ['semester', 'semesters', 'term'],
-        dosen: ['lecturer', 'teacher', 'dosen', 'faculty'],
-        mahasiswa: ['student', 'students', 'mahasiswa', 'mhs'],
-        matakuliah: ['course', 'subject', 'matakuliah', 'mata_kuliah', 'matkul'],
-        kelas: ['class', 'courseclass', 'kelas', 'room', 'classroom'],
-        enrollment: ['enrollment', 'enroll', 'krs', 'registrasi', 'pendaftaran'],
-        penilaian: ['grade', 'grading', 'score', 'assessment', 'nilai', 'penilaian'],
-        nilai: ['grade', 'score', 'nilai', 'assessment'],
-        rekapitulasi: ['report', 'summary', 'rekap', 'rekapitulasi', 'export'],
-        monitoring: ['monitoring', 'monitor', 'track', 'tracking'],
+    // Kamus modul utama ke nama file Controller/Model/Blade spesifik
+    strictModuleFilesMap = {
+        'fondasi project': ['user.php', 'auth', 'login', 'dashboard'],
+        'users': ['user.php', 'usercontroller.php', 'users'],
+        'login': ['login', 'auth', 'session'],
+        'dashboard': ['dashboard'],
+        'tahun akademik': ['tahunakademik', 'academicyear', 'tahun_akademik'],
+        'program studi': ['programstudi', 'prodi', 'studyprogram', 'program_studi'],
+        'tata usaha': ['tatausaha', 'tu', 'staff'],
+        'pengaturan': ['setting', 'settings', 'config', 'pengaturan'],
+        'notifikasi': ['notification', 'notifications', 'notice'],
+        'semester': ['semester', 'semesters'],
+        'dosen': ['dosen', 'lecturer'],
+        'mahasiswa': ['mahasiswa', 'student', 'students'],
+        'mata kuliah': ['matakuliah', 'course', 'subject', 'matkul', 'mata_kuliah'],
+        'kelas': ['kelas', 'courseclass', 'classroom'],
+        'enrollment': ['enrollment', 'enroll', 'krs'],
+        'penilaian': ['penilaian', 'nilaicontroller', 'penilaiancontroller', 'gradecontroller'],
+        'input nilai': ['nilaicontroller', 'penilaiancontroller', 'gradecontroller', 'inputnilai'],
+        'workflow nilai': ['workflow', 'verifikasinilai', 'reviewnilai'],
+        'rekapitulasi': ['rekapitulasi', 'rekap', 'reportcontroller'],
+        'log aktivitas': ['activitylog', 'logaktivitas', 'auditlog'],
     };
     constructor(projectRoot = process.cwd()) {
         this.projectRoot = projectRoot;
@@ -95,7 +97,7 @@ class CodebaseVerifier {
         return results;
     }
     /**
-     * Verifikasi apakah modul/entity utama ada di codebase (dengan pencocokan sinonim Indonesia-Inggris).
+     * Verifikasi strictly berdasarkan modul Controller / Model / Migration utama.
      */
     isModuleImplemented(sectionTitle, itemText) {
         const combinedText = `${sectionTitle} ${itemText}`.toLowerCase();
@@ -107,35 +109,43 @@ class CodebaseVerifier {
             if (hasComposer || hasArtisan)
                 return true;
         }
-        // 2. Bersihkan teks dan ekstrak kata kunci
-        const cleaned = combinedText
-            .replace(/menu\s*\d+/gi, '')
-            .replace(/[^\w\s]/gi, ' ')
-            .trim();
-        const stopWords = new Set([
-            'menu', 'tahap', 'fondasi', 'dasar', 'lanjutan', 'lengkap', 'master', 'project',
-            'seluruh', 'isi', 'trd', 'pada', 'dan', 'dengan', 'untuk', 'yang', 'dalam', 'fitur',
-            'halaman', 'alur', 'proses', 'validasi', 'kriteria', 'penutupan', 'in', 'scope', 'out', 'tabel', 'model'
-        ]);
-        const keywords = cleaned
-            .split(/\s+/)
-            .filter((w) => w.length > 2 && !stopWords.has(w.toLowerCase()));
-        if (keywords.length === 0) {
-            return false;
-        }
-        // 3. Bangun daftar pencarian termasuk sinonim (Indonesia <> Inggris/Laravel)
-        const targetTerms = new Set();
-        for (const kw of keywords) {
-            targetTerms.add(kw.toLowerCase());
-            if (this.synonymMap[kw.toLowerCase()]) {
-                this.synonymMap[kw.toLowerCase()].forEach((syn) => targetTerms.add(syn));
+        // 2. Cari modul spesifik dari strict map
+        let targetPatterns = [];
+        for (const [moduleKey, patterns] of Object.entries(this.strictModuleFilesMap)) {
+            if (combinedText.includes(moduleKey)) {
+                targetPatterns = patterns;
+                break;
             }
         }
-        // 4. Cari apakah ada file di codebase yang cocok dengan term pencarian
-        for (const term of targetTerms) {
+        // Jika tidak ada pattern khusus yang cocok di map, ekstrak nama kata unik > 4 karakter (misal "Kelas", "Enrollment")
+        if (targetPatterns.length === 0) {
+            const cleaned = combinedText
+                .replace(/menu\s*\d+/gi, '')
+                .replace(/[^\w\s]/gi, ' ')
+                .trim();
+            const stopWords = new Set([
+                'menu', 'tahap', 'fondasi', 'dasar', 'lanjutan', 'lengkap', 'master', 'project',
+                'seluruh', 'isi', 'trd', 'pada', 'dan', 'dengan', 'untuk', 'yang', 'dalam', 'fitur',
+                'halaman', 'alur', 'proses', 'validasi', 'kriteria', 'penutupan', 'in', 'scope', 'out', 'tabel', 'model',
+                'pencarian', 'pagination', 'empty', 'state', 'routing', 'acceptance', 'criteria', 'dropdown', 'unread',
+                'count', 'status', 'read', 'mark', 'redirect', 'ownership', 'scheduler', 'pembersihan', 'penghapusan'
+            ]);
+            const words = cleaned.split(/\s+/).filter((w) => w.length > 3 && !stopWords.has(w.toLowerCase()));
+            targetPatterns = words;
+        }
+        if (targetPatterns.length === 0) {
+            return false;
+        }
+        // 3. Lakukan Strict Filename Check: Harus mencakup pattern sebagai Controller, Model, Migration, atau View spesifik
+        for (const pattern of targetPatterns) {
+            const pLower = pattern.toLowerCase();
             const match = files.some((filePath) => {
                 const baseName = path.basename(filePath).toLowerCase();
-                return baseName.includes(term);
+                // Memastikan cocok dengan nama file controller, model, migration, atau view
+                return baseName.includes(pLower) && (baseName.endsWith('.php') ||
+                    baseName.endsWith('.js') ||
+                    baseName.endsWith('.ts') ||
+                    baseName.endsWith('.blade.php'));
             });
             if (match) {
                 return true;
@@ -173,7 +183,7 @@ class Validator {
                 pendingTasks.push(taskText);
             }
         }
-        // 2. Jika tidak ada GFM Checkbox, periksa berdasarkan Modul & Codebase Verification (Synonym Matching)
+        // 2. Jika tidak ada GFM Checkbox, periksa berdasarkan Modul & Codebase Verification
         if (totalTasks === 0) {
             const lines = content.split(/\r?\n/);
             let currentSectionTitle = '';
@@ -199,7 +209,7 @@ class Validator {
                         const itemText = bulletMatch[1].trim();
                         if (itemText && !itemText.startsWith('**')) {
                             totalTasks++;
-                            // Verifikasi entity modul utama (misal: "Pengaturan" -> Setting.php, "Notifikasi" -> Notification.php)
+                            // Verifikasi Controller/Model spesifik untuk modul tersebut
                             const isImplemented = this.verifier.isModuleImplemented(currentSectionTitle, itemText);
                             if (isImplemented) {
                                 completedTasks++;
