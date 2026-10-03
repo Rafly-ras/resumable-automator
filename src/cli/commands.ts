@@ -10,45 +10,18 @@ const orchestrator = new Orchestrator();
 const validator = new Validator();
 const gatekeeper = new Gatekeeper();
 
-/**
- * Helper untuk memuat seluruh VirtualPhase secara otomatis dari proyek.
- */
 async function getPhases(): Promise<VirtualPhase[]> {
   return await orchestrator.loadPhasesFromProject(process.cwd());
 }
 
-/**
- * Helper Auto-Sync:
- * Otomatis memvalidasi batas state dan melompati (Fast-Forward) fase-fase yang 100% selesai
- * sehingga CLI mendarat pada fase aktif yang memerlukan pengerjaan.
- */
-async function ensureAutoSyncedState(): Promise<{ state: AutomatorState; phases: VirtualPhase[] }> {
+async function getValidState(): Promise<{ state: AutomatorState; phases: VirtualPhase[] }> {
   let state = await stateManager.loadState();
   const phases = await getPhases();
 
-  // Jika index state out of bounds (misal bekas state 607 lama), reset index ke 0
+  // Jika state index di luar jangkauan fase, validasi kembali ke batas valid
   if (state.currentPhaseIndex >= phases.length) {
     state.currentPhaseIndex = 0;
     await stateManager.saveState(state);
-  }
-
-  let skippedCount = 0;
-
-  while (state.currentPhaseIndex < phases.length - 1) {
-    const activePhase = phases[state.currentPhaseIndex];
-    const validation = validator.validateContent(activePhase.content);
-
-    // Jika fase saat ini 100% selesai dan tidak ada pending tasks, auto advance
-    if (validation.progressPercentage === 100 && validation.pendingTasks.length === 0) {
-      state = await stateManager.advancePhase();
-      skippedCount++;
-    } else {
-      break;
-    }
-  }
-
-  if (skippedCount > 0) {
-    console.log(`⚡ [Auto-Sync] Otomatis melompati ${skippedCount} fase yang telah 100% selesai.\n`);
   }
 
   return { state, phases };
@@ -63,10 +36,10 @@ program
 
 program
   .command('start')
-  .description('Mulai eksekusi task/workflow fase aktif (dengan Auto-Sync)')
+  .description('Mulai eksekusi task/workflow fase aktif')
   .action(async () => {
     try {
-      const { state, phases } = await ensureAutoSyncedState();
+      const { state, phases } = await getValidState();
 
       if (state.currentPhaseIndex >= phases.length) {
         console.log('🎉 Selamat! Seluruh fase proyek telah selesai dieksekusi.');
@@ -96,7 +69,7 @@ program
   .description('Cek status orchestrator dan tugas fase aktif')
   .action(async () => {
     try {
-      const { state, phases } = await ensureAutoSyncedState();
+      const { state, phases } = await getValidState();
 
       if (state.currentPhaseIndex >= phases.length) {
         console.log('🎉 Seluruh fase (100%) telah selesai!');
@@ -131,21 +104,22 @@ program
 
 program
   .command('next')
-  .description('Lanjutkan ke fase berikutnya (Hard Blocker)')
+  .description('Lanjutkan ke fase berikutnya (Hard Blocker jika task pending)')
   .action(async () => {
     try {
       const state = await stateManager.loadState();
       const phases = await getPhases();
 
-      if (state.currentPhaseIndex >= phases.length) {
-        console.log('🎉 Seluruh fase sudah selesai. Tidak ada fase selanjutnya.');
+      if (state.currentPhaseIndex >= phases.length - 1) {
+        console.log('🎉 Ini adalah fase terakhir proyek.');
         return;
       }
 
       const activePhase = phases[state.currentPhaseIndex];
       const validation = validator.validateContent(activePhase.content);
 
-      if (validation.progressPercentage < 100 && validation.pendingTasks.length > 0) {
+      // Jika ada checklist GFM yang masih pending, blokir transisi
+      if (validation.progressPercentage < 100 && validation.pendingTasks.length > 0 && activePhase.content.includes('[ ]')) {
         console.error('\n⛔ EXECUTION FAILED: Transisi Fase Ditolak!');
         console.error(`Progression saat ini: ${validation.progressPercentage}% (${validation.completedTasks}/${validation.totalTasks} tugas completed)`);
         console.error(`File Source: ${path.basename(activePhase.filePath)}`);
@@ -157,9 +131,11 @@ program
         process.exit(1);
       }
 
-      console.log(`\n✅ Phase [${activePhase.title}] (${path.basename(activePhase.filePath)}) divalidasi.`);
+      console.log(`\n✅ Phase [${activePhase.title}] (${path.basename(activePhase.filePath)}) disetujui.`);
       const nextState = await stateManager.advancePhase();
-      console.log(`🔓 Gerbang menuju fase selanjutnya (Index: ${nextState.currentPhaseIndex}) telah dibuka!\n`);
+      const newActive = phases[nextState.currentPhaseIndex];
+      console.log(`🔓 Gerbang menuju fase selanjutnya dibuka!`);
+      console.log(`🎯 Fase Aktif Baru: ${newActive.title} [Fase ${nextState.currentPhaseIndex + 1} dari ${phases.length}]\n`);
     } catch (error: any) {
       console.error('❌ Error executing next:', error.message);
       process.exit(1);
@@ -169,7 +145,7 @@ program
 program
   .command('jump <target>')
   .alias('goto')
-  .description('Pindah langsung ke fase tertentu (contoh: npx automator jump 4 atau npx automator jump fase-4)')
+  .description('Pindah langsung ke fase tertentu (contoh: npx automator jump 6 atau npx automator jump fase-5)')
   .action(async (target: string) => {
     try {
       const phases = await getPhases();
@@ -177,6 +153,7 @@ program
 
       if (/^\d+$/.test(target)) {
         const num = parseInt(target, 10);
+        // Mengakomodasi 1-indexed (1..N) atau 0-indexed (0..N-1)
         if (num >= 1 && num <= phases.length) {
           targetIndex = num - 1;
         } else if (num >= 0 && num < phases.length) {
