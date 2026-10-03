@@ -71,14 +71,14 @@ export class CodebaseVerifier {
   }
 
   /**
-   * Memeriksa apakah komponen kode dari tugas tersebut (FE, BE, atau DB) ada di codebase
+   * Memeriksa secara STRICT apakah komponen kode (FE, BE, atau DB) benar-benar ada di folder arsitektur yang sesuai
    */
   isTaskImplementedInCodebase(sectionTitle: string, taskText: string): boolean {
     const layer = this.getTaskLayer(taskText);
     const combined = `${sectionTitle} ${taskText}`.toLowerCase();
     const files = this.getAllProjectFiles();
 
-    // 1. Ekstrak kata kunci entity utama (misal: "Kelas", "Enrollment", "Penilaian", "Semester", "Dosen", "Mahasiswa")
+    // 1. Ekstrak kata kunci entity utama
     const cleaned = combined
       .replace(/menu\s*\d+/gi, '')
       .replace(/[^\w\s]/gi, ' ')
@@ -97,7 +97,7 @@ export class CodebaseVerifier {
       return false;
     }
 
-    // 2. Periksa keberadaan file berdasarkan Layer Arsitektur
+    // 2. Strict Check per Layer (Tanpa Loose Fallback)
     for (const kw of keywords) {
       const kwLower = kw.toLowerCase();
 
@@ -105,19 +105,35 @@ export class CodebaseVerifier {
         const baseName = path.basename(filePath).toLowerCase();
         const relPath = path.relative(this.projectRoot, filePath).toLowerCase().replace(/\\/g, '/');
 
-        if (!baseName.includes(kwLower)) {
+        if (!baseName.includes(kwLower) && !relPath.includes(kwLower)) {
           return false;
         }
 
         if (layer === 'FE') {
-          // Frontend: Blade views, components, JS/CSS, HTML
-          return relPath.includes('views') || relPath.includes('components') || baseName.endsWith('.blade.php') || baseName.endsWith('.html');
+          // Strict FE Check: Harus berada di folder views / components / blade
+          return (
+            relPath.includes('views') ||
+            relPath.includes('components') ||
+            baseName.endsWith('.blade.php') ||
+            baseName.endsWith('.vue') ||
+            baseName.endsWith('.jsx')
+          );
         } else if (layer === 'DB') {
-          // Database & Routing: Migrations, seeders, routes/web.php
-          return relPath.includes('migrations') || relPath.includes('seeders') || relPath.includes('routes');
+          // Strict DB Check: Harus berada di folder migrations / seeders / routes
+          return (
+            relPath.includes('migrations') ||
+            relPath.includes('seeders') ||
+            relPath.includes('routes')
+          );
         } else {
-          // Backend: Controllers, Models, Services, Policies
-          return relPath.includes('controllers') || relPath.includes('models') || relPath.includes('services') || baseName.endsWith('.php');
+          // Strict BE Check: Harus berupa Controller, Model, Service, Request, Policy
+          return (
+            relPath.includes('controllers') ||
+            relPath.includes('models') ||
+            relPath.includes('services') ||
+            relPath.includes('requests') ||
+            relPath.includes('policies')
+          );
         }
       });
 
@@ -126,11 +142,8 @@ export class CodebaseVerifier {
       }
     }
 
-    // Fallback: Jika tidak menemukan spesifik per layer, cek keberadaan file entity secara umum
-    return files.some((filePath) => {
-      const baseName = path.basename(filePath).toLowerCase();
-      return keywords.some((kw) => baseName.includes(kw.toLowerCase()));
-    });
+    // TANPA FALLBACK LOOSE! Jika tidak ditemukan di folder layer spesifik, return FALSE!
+    return false;
   }
 }
 
@@ -142,7 +155,7 @@ export class Validator {
   }
 
   /**
-   * Menganalisis konten Markdown fase dan memindai struktur kode proyek:
+   * Menganalisis konten Markdown fase dan memindai secara STRICT struktur kode proyek:
    * Menghitung progress terurai secara terstruktur:
    * - Frontend Progress (FE) %
    * - Backend Progress (BE) %
@@ -202,7 +215,7 @@ export class Validator {
             if (/^\[x\]/i.test(itemText) || /^\(x\)/i.test(itemText)) {
               isImplemented = true;
             } else {
-              // Cek secara otomatis di dalam struktur codebase aktual
+              // Cek secara STRICT di dalam folder layer codebase aktual
               isImplemented = this.verifier.isTaskImplementedInCodebase(currentSectionTitle, itemText);
             }
 
@@ -222,9 +235,9 @@ export class Validator {
 
     const progressPercentage =
       totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
-    const feProgress = totalFE > 0 ? Math.round((completedFE / totalFE) * 100) : 100;
-    const beProgress = totalBE > 0 ? Math.round((completedBE / totalBE) * 100) : 100;
-    const dbProgress = totalDB > 0 ? Math.round((completedDB / totalDB) * 100) : 100;
+    const feProgress = totalFE > 0 ? Math.round((completedFE / totalFE) * 100) : 0;
+    const beProgress = totalBE > 0 ? Math.round((completedBE / totalBE) * 100) : 0;
+    const dbProgress = totalDB > 0 ? Math.round((completedDB / totalDB) * 100) : 0;
 
     return {
       totalTasks,
