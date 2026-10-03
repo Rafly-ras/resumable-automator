@@ -12,6 +12,28 @@ export class CodebaseVerifier {
   private projectRoot: string;
   private fileCache: string[] | null = null;
 
+  // Kamus Pemetaan Bahasa & Istilah Teknis (Bahasa Indonesia <> English/Laravel Standard)
+  private synonymMap: Record<string, string[]> = {
+    pengaturan: ['setting', 'settings', 'config', 'configuration', 'option', 'options', 'pengaturan'],
+    notifikasi: ['notification', 'notifications', 'notice', 'alert', 'queue', 'job', 'notifikasi'],
+    pengguna: ['user', 'users', 'account', 'accounts', 'pengguna'],
+    login: ['auth', 'login', 'authentication', 'session', 'masuk'],
+    dashboard: ['dashboard', 'home', 'main', 'beranda'],
+    tahunakademik: ['academicyear', 'schoolyear', 'tahunakademik', 'tahun_akademik', 'academic_year', 'tahun'],
+    programstudi: ['studyprogram', 'prodi', 'programstudi', 'program_studi', 'department', 'dept'],
+    tatausaha: ['tatausaha', 'tata_usaha', 'tu', 'staff', 'admin'],
+    semester: ['semester', 'semesters', 'term'],
+    dosen: ['lecturer', 'teacher', 'dosen', 'faculty'],
+    mahasiswa: ['student', 'students', 'mahasiswa', 'mhs'],
+    matakuliah: ['course', 'subject', 'matakuliah', 'mata_kuliah', 'matkul'],
+    kelas: ['class', 'courseclass', 'kelas', 'room', 'classroom'],
+    enrollment: ['enrollment', 'enroll', 'krs', 'registrasi', 'pendaftaran'],
+    penilaian: ['grade', 'grading', 'score', 'assessment', 'nilai', 'penilaian'],
+    nilai: ['grade', 'score', 'nilai', 'assessment'],
+    rekapitulasi: ['report', 'summary', 'rekap', 'rekapitulasi', 'export'],
+    monitoring: ['monitoring', 'monitor', 'track', 'tracking'],
+  };
+
   constructor(projectRoot: string = process.cwd()) {
     this.projectRoot = projectRoot;
   }
@@ -51,7 +73,7 @@ export class CodebaseVerifier {
   }
 
   /**
-   * Verifikasi apakah modul/entity utama ada di codebase.
+   * Verifikasi apakah modul/entity utama ada di codebase (dengan pencocokan sinonim Indonesia-Inggris).
    */
   isModuleImplemented(sectionTitle: string, itemText: string): boolean {
     const combinedText = `${sectionTitle} ${itemText}`.toLowerCase();
@@ -64,7 +86,7 @@ export class CodebaseVerifier {
       if (hasComposer || hasArtisan) return true;
     }
 
-    // 2. Filter kata kunci yang tidak berguna/terlalu umum (seperti "master", "lanjutan", "tahap")
+    // 2. Bersihkan teks dan ekstrak kata kunci
     const cleaned = combinedText
       .replace(/menu\s*\d+/gi, '')
       .replace(/[^\w\s]/gi, ' ')
@@ -73,7 +95,7 @@ export class CodebaseVerifier {
     const stopWords = new Set([
       'menu', 'tahap', 'fondasi', 'dasar', 'lanjutan', 'lengkap', 'master', 'project',
       'seluruh', 'isi', 'trd', 'pada', 'dan', 'dengan', 'untuk', 'yang', 'dalam', 'fitur',
-      'halaman', 'alur', 'proses', 'validasi', 'kriteria', 'penutupan', 'in', 'scope', 'out'
+      'halaman', 'alur', 'proses', 'validasi', 'kriteria', 'penutupan', 'in', 'scope', 'out', 'tabel', 'model'
     ]);
 
     const keywords = cleaned
@@ -84,13 +106,20 @@ export class CodebaseVerifier {
       return false;
     }
 
-    // Cari apakah ada file di codebase yang nama filenya mencakup salah satu kata kunci entity utama
-    // (misal: "semester", "dosen", "mahasiswa", "matakuliah", "kelas", "enrollment", "penilaian")
-    for (const keyword of keywords) {
-      const kwLower = keyword.toLowerCase();
+    // 3. Bangun daftar pencarian termasuk sinonim (Indonesia <> Inggris/Laravel)
+    const targetTerms = new Set<string>();
+    for (const kw of keywords) {
+      targetTerms.add(kw.toLowerCase());
+      if (this.synonymMap[kw.toLowerCase()]) {
+        this.synonymMap[kw.toLowerCase()].forEach((syn) => targetTerms.add(syn));
+      }
+    }
+
+    // 4. Cari apakah ada file di codebase yang cocok dengan term pencarian
+    for (const term of targetTerms) {
       const match = files.some((filePath) => {
         const baseName = path.basename(filePath).toLowerCase();
-        return baseName.includes(kwLower);
+        return baseName.includes(term);
       });
 
       if (match) {
@@ -135,7 +164,7 @@ export class Validator {
       }
     }
 
-    // 2. Jika tidak ada GFM Checkbox, periksa berdasarkan Modul & Codebase Verification
+    // 2. Jika tidak ada GFM Checkbox, periksa berdasarkan Modul & Codebase Verification (Synonym Matching)
     if (totalTasks === 0) {
       const lines = content.split(/\r?\n/);
       let currentSectionTitle = '';
@@ -164,7 +193,7 @@ export class Validator {
             if (itemText && !itemText.startsWith('**')) {
               totalTasks++;
 
-              // Verifikasi entity modul utama (misal: "Menu 12 Semester", "Menu 18 Kelas", "Menu 19 Enrollment")
+              // Verifikasi entity modul utama (misal: "Pengaturan" -> Setting.php, "Notifikasi" -> Notification.php)
               const isImplemented = this.verifier.isModuleImplemented(currentSectionTitle, itemText);
 
               if (isImplemented) {
