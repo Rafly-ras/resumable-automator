@@ -3,72 +3,53 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.Validator = void 0;
 class Validator {
     /**
-     * Menganalisis konten Markdown fase:
-     * 1. Jika ada GFM Checkboxes (- [x] / - [ ]), hitung persentase secara persis.
-     * 2. Jika hanya berisi poin scope biasa (- Item), anggap scope siap dieksekusi (100%)
-     *    agar tidak membuat pengguna bingung dengan angka false 0%.
+     * Menganalisis konten Markdown fase secara presisi:
+     * Setiap poin di bawah "In Scope" dianggap sebagai tugas aktif yang wajib diselesaikan.
+     * - Poin berawalan - [x] atau (x) dianggap COMPLETED (selesai).
+     * - Poin berawalan - [ ] atau poin biasa (-) dianggap PENDING (belum selesai).
      */
     validateContent(content) {
         let totalTasks = 0;
         let completedTasks = 0;
         const pendingTasks = [];
-        // 1. Cek keberadaan GFM Checkboxes (- [x] / - [ ])
-        const gfmRegex = /^\s*[-*+]\s*\[([ xX])\]\s*(.+)$/gm;
-        let match;
-        while ((match = gfmRegex.exec(content)) !== null) {
-            totalTasks++;
-            const isChecked = match[1].toLowerCase() === 'x';
-            const taskText = match[2].trim();
-            if (isChecked) {
-                completedTasks++;
-            }
-            else {
-                pendingTasks.push(taskText);
-            }
-        }
-        const hasGfmCheckboxes = totalTasks > 0;
-        // 2. Jika tidak ada GFM Checkbox, baca poin-poin di bawah bagian "In Scope"
-        if (!hasGfmCheckboxes) {
-            const lines = content.split(/\r?\n/);
-            let inScopeSection = false;
-            for (const line of lines) {
-                const trimmed = line.trim();
-                if (trimmed.startsWith('#')) {
-                    if (/in\s*scope/i.test(trimmed) && !/out\s*of\s*scope/i.test(trimmed)) {
-                        inScopeSection = true;
-                    }
-                    else if (/out\s*of\s*scope/i.test(trimmed) || /kriteria/i.test(trimmed)) {
-                        inScopeSection = false;
-                    }
-                    continue;
+        const lines = content.split(/\r?\n/);
+        let inScopeSection = false;
+        for (const line of lines) {
+            const trimmed = line.trim();
+            if (trimmed.startsWith('#')) {
+                if (/in\s*scope/i.test(trimmed) && !/out\s*of\s*scope/i.test(trimmed)) {
+                    inScopeSection = true;
                 }
-                if (inScopeSection) {
-                    const bulletMatch = trimmed.match(/^[-*+]\s+(.+)$/);
-                    if (bulletMatch) {
-                        const itemText = bulletMatch[1].trim();
-                        if (itemText && !itemText.startsWith('**')) {
-                            totalTasks++;
-                            if (/^\[x\]/i.test(itemText) || /^\(x\)/i.test(itemText)) {
-                                completedTasks++;
-                            }
-                            else {
-                                pendingTasks.push(itemText);
-                            }
+                else if (/out\s*of\s*scope/i.test(trimmed) || /kriteria/i.test(trimmed)) {
+                    inScopeSection = false;
+                }
+                continue;
+            }
+            if (inScopeSection) {
+                const bulletMatch = trimmed.match(/^[-*+]\s+(.+)$/);
+                if (bulletMatch) {
+                    const itemText = bulletMatch[1].trim();
+                    if (itemText && !itemText.startsWith('**')) {
+                        totalTasks++;
+                        // Cek apakah item ditandai [x] atau (x)
+                        if (/^\[x\]/i.test(itemText) || /^\(x\)/i.test(itemText)) {
+                            completedTasks++;
+                        }
+                        else {
+                            // Hapus prefix [ ] jika ada agar tampilan bersih
+                            const cleanPendingText = itemText.replace(/^\[\s*\]\s*/, '');
+                            pendingTasks.push(cleanPendingText);
                         }
                     }
                 }
             }
         }
-        // Jika dokumen berupa poin scope biasa tanpa checkbox (- [ ]), anggap 100% disetujui / siap dieksekusi
-        const progressPercentage = hasGfmCheckboxes
-            ? Math.round((completedTasks / totalTasks) * 100)
-            : 100;
+        const progressPercentage = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
         return {
             totalTasks,
-            completedTasks: hasGfmCheckboxes ? completedTasks : totalTasks,
+            completedTasks,
             progressPercentage,
-            pendingTasks: hasGfmCheckboxes ? pendingTasks : [],
-            hasGfmCheckboxes,
+            pendingTasks,
         };
     }
 }

@@ -103,15 +103,15 @@ program
         console.log(`🎯 Fase Aktif      : ${activePhase.title} [Fase ${state.currentPhaseIndex + 1} dari ${phases.length}]`);
         console.log(`📁 File Source     : ${activePhase.filePath}`);
         console.log(`📈 Progress        : ${validation.progressPercentage}%`);
-        console.log(`✅ Item Scope      : ${validation.totalTasks} Item`);
-        if (validation.hasGfmCheckboxes && validation.pendingTasks.length > 0) {
-            console.log('\n⏳ Checkbox Pending:');
+        console.log(`✅ Tugas Selesai   : ${validation.completedTasks} / ${validation.totalTasks}`);
+        if (validation.pendingTasks.length > 0) {
+            console.log('\n⏳ Task Pending:');
             validation.pendingTasks.forEach((task, idx) => {
                 console.log(`   ${idx + 1}. [ ] ${task}`);
             });
         }
         else {
-            console.log('\n✨ Seluruh tugas/scope pada fase ini siap dieksekusi!');
+            console.log('\n✨ Semua tugas pada fase ini telah diselesaikan!');
         }
         console.log('--------------------------------------------------\n');
     }
@@ -122,7 +122,7 @@ program
 });
 program
     .command('next')
-    .description('Lanjutkan ke fase berikutnya (Hard Blocker jika checklist pending)')
+    .description('Lanjutkan ke fase berikutnya (Hard Blocker jika ada task pending)')
     .action(async () => {
     try {
         const state = await stateManager.loadState();
@@ -133,8 +133,8 @@ program
         }
         const activePhase = phases[state.currentPhaseIndex];
         const validation = validator.validateContent(activePhase.content);
-        // Jika ada checklist GFM yang masih pending (- [ ]), blokir transisi
-        if (validation.hasGfmCheckboxes && validation.progressPercentage < 100) {
+        // Blokir transisi jika masih ada tugas yang pending (progress < 100%)
+        if (validation.progressPercentage < 100 && validation.pendingTasks.length > 0) {
             console.error('\n⛔ EXECUTION FAILED: Transisi Fase Ditolak!');
             console.error(`Progression saat ini: ${validation.progressPercentage}% (${validation.completedTasks}/${validation.totalTasks} tugas completed)`);
             console.error(`File Source: ${path.basename(activePhase.filePath)}`);
@@ -142,7 +142,7 @@ program
             validation.pendingTasks.forEach((task, idx) => {
                 console.error(` ❌ [ ] ${task}`);
             });
-            console.error('\nSelesaikan seluruh tugas pending (- [ ]) sebelum melanjut ke fase berikutnya.\n');
+            console.error('\nTandai tugas dengan [- [x]] atau selesaikan tugas sebelum melanjut ke fase berikutnya.\n');
             process.exit(1);
         }
         console.log(`\n✅ Phase [${activePhase.title}] (${path.basename(activePhase.filePath)}) disetujui.`);
@@ -164,7 +164,7 @@ program
     try {
         const phases = await getPhases();
         let targetIndex = -1;
-        // 1. Cari berdasarkan pencocokan nama file (misal: "fase-5" atau "fase-4")
+        // 1. Cari berdasarkan pencocokan nama file (misal: "fase-5")
         const query = target.toLowerCase();
         targetIndex = phases.findIndex((p) => path.basename(p.filePath).toLowerCase().includes(query) ||
             p.title.toLowerCase().includes(query));
