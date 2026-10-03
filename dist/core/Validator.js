@@ -3,16 +3,16 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.Validator = void 0;
 class Validator {
     /**
-     * Menganalisis konten Markdown fase secara bersih dan deterministik:
-     * 1. Mengidentifikasi GFM Checkbox (- [x] untuk completed, - [ ] untuk pending)
-     * 2. Jika dokumen berupa poin teks biasa di bawah "In Scope", mengeset tugas sebagai item fase.
-     *    Dua-duanya berjalan tanpa hardcode kamus kata kunci agar 100% kompatibel di semua proyek.
+     * Menganalisis konten Markdown fase:
+     * 1. Jika ada GFM Checkboxes (- [x] / - [ ]), hitung persentase secara persis.
+     * 2. Jika hanya berisi poin scope biasa (- Item), anggap scope siap dieksekusi (100%)
+     *    agar tidak membuat pengguna bingung dengan angka false 0%.
      */
     validateContent(content) {
         let totalTasks = 0;
         let completedTasks = 0;
         const pendingTasks = [];
-        // 1. GFM Checkboxes (- [x] / - [ ])
+        // 1. Cek keberadaan GFM Checkboxes (- [x] / - [ ])
         const gfmRegex = /^\s*[-*+]\s*\[([ xX])\]\s*(.+)$/gm;
         let match;
         while ((match = gfmRegex.exec(content)) !== null) {
@@ -26,8 +26,9 @@ class Validator {
                 pendingTasks.push(taskText);
             }
         }
+        const hasGfmCheckboxes = totalTasks > 0;
         // 2. Jika tidak ada GFM Checkbox, baca poin-poin di bawah bagian "In Scope"
-        if (totalTasks === 0) {
+        if (!hasGfmCheckboxes) {
             const lines = content.split(/\r?\n/);
             let inScopeSection = false;
             for (const line of lines) {
@@ -58,12 +59,16 @@ class Validator {
                 }
             }
         }
-        const progressPercentage = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 100;
+        // Jika dokumen berupa poin scope biasa tanpa checkbox (- [ ]), anggap 100% disetujui / siap dieksekusi
+        const progressPercentage = hasGfmCheckboxes
+            ? Math.round((completedTasks / totalTasks) * 100)
+            : 100;
         return {
             totalTasks,
-            completedTasks,
+            completedTasks: hasGfmCheckboxes ? completedTasks : totalTasks,
             progressPercentage,
-            pendingTasks,
+            pendingTasks: hasGfmCheckboxes ? pendingTasks : [],
+            hasGfmCheckboxes,
         };
     }
 }
