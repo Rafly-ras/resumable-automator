@@ -1,6 +1,6 @@
 import { Command } from 'commander';
 import * as path from 'path';
-import { StateManager } from '../core/StateManager';
+import { StateManager, AutomatorState } from '../core/StateManager';
 import { Orchestrator, VirtualPhase } from '../core/Orchestrator';
 import { Validator } from '../core/Validator';
 import { Gatekeeper } from '../core/Gatekeeper';
@@ -17,6 +17,36 @@ async function getPhases(): Promise<VirtualPhase[]> {
   return await orchestrator.loadPhasesFromProject(process.cwd());
 }
 
+/**
+ * Helper Auto-Sync: Memastikan jika ada fase-fase awal yang sudah 100% selesai (misal hasil clone repo baru),
+ * state akan otomatis melompat (Fast-Forward) ke fase pertama yang masih memiliki tugas pending.
+ */
+async function ensureAutoSyncedState(): Promise<{ state: AutomatorState; phases: VirtualPhase[] }> {
+  let state = await stateManager.loadState();
+  const phases = await getPhases();
+
+  let skippedCount = 0;
+
+  while (state.currentPhaseIndex < phases.length) {
+    const activePhase = phases[state.currentPhaseIndex];
+    const validation = validator.validateContent(activePhase.content);
+
+    // Jika fase saat ini 100% selesai dan masih ada fase berikutnya, auto advance
+    if (validation.progressPercentage === 100 && validation.totalTasks > 0 && state.currentPhaseIndex < phases.length - 1) {
+      state = await stateManager.advancePhase();
+      skippedCount++;
+    } else {
+      break;
+    }
+  }
+
+  if (skippedCount > 0) {
+    console.log(`⚡ [Auto-Sync] Otomatis melompati ${skippedCount} fase yang telah 100% selesai.\n`);
+  }
+
+  return { state, phases };
+}
+
 const program = new Command();
 
 program
@@ -26,11 +56,10 @@ program
 
 program
   .command('start')
-  .description('Mulai eksekusi task/workflow fase aktif')
+  .description('Mulai eksekusi task/workflow fase aktif (dengan Auto-Sync)')
   .action(async () => {
     try {
-      const state = await stateManager.loadState();
-      const phases = await getPhases();
+      const { state, phases } = await ensureAutoSyncedState();
 
       if (state.currentPhaseIndex >= phases.length) {
         console.log('🎉 Selamat! Seluruh fase proyek telah selesai dieksekusi.');
@@ -43,7 +72,7 @@ program
         activePhase.content
       );
 
-      console.log('\n==================================================');
+      console.log('==================================================');
       console.log(`🔒 GATEKEEPER LOCK - FASE AKTIF [${state.currentPhaseIndex + 1}/${phases.length}]`);
       console.log(`📁 File Source: ${path.basename(activePhase.filePath)}`);
       console.log('==================================================\n');
@@ -57,11 +86,10 @@ program
 
 program
   .command('status')
-  .description('Cek status orchestrator dan tugas fase aktif')
+  .description('Cek status orchestrator dan tugas fase aktif (dengan Auto-Sync)')
   .action(async () => {
     try {
-      const state = await stateManager.loadState();
-      const phases = await getPhases();
+      const { state, phases } = await ensureAutoSyncedState();
 
       if (state.currentPhaseIndex >= phases.length) {
         console.log('🎉 Seluruh fase (100%) telah selesai!');
@@ -71,7 +99,7 @@ program
       const activePhase = phases[state.currentPhaseIndex];
       const validation = validator.validateContent(activePhase.content);
 
-      console.log('\n📊 AUTOMATOR STATUS REPORT');
+      console.log('📊 AUTOMATOR STATUS REPORT');
       console.log('--------------------------------------------------');
       console.log(`📌 Job ID          : ${state.jobId}`);
       console.log(`🎯 Fase Aktif      : ${activePhase.title} [Fase ${state.currentPhaseIndex + 1} dari ${phases.length}]`);
@@ -127,6 +155,25 @@ program
       console.log(`🔓 Gerbang menuju fase selanjutnya (Index: ${nextState.currentPhaseIndex}) telah dibuka!\n`);
     } catch (error: any) {
       console.error('❌ Error executing next:', error.message);
+      process.exit(1);
+    }
+  });
+
+program
+  .command('sync')
+  .description('Fast-forward otomatis melewati seluruh fase yang sudah 100% selesai')
+  .action(async () => {
+    try {
+      const { state, phases } = await ensureAutoSyncedState();
+
+      if (state.currentPhaseIndex >= phases.length) {
+        console.log('\n🎉 Seluruh fase proyek telah 100% selesai!');
+      } else {
+        const currentActive = phases[state.currentPhaseIndex];
+        console.log(`🎯 Fase Aktif Sekarang: "${currentActive.title}" [Fase ${state.currentPhaseIndex + 1} dari ${phases.length}] (${path.basename(currentActive.filePath)})\n`);
+      }
+    } catch (error: any) {
+      console.error('❌ Error during sync:', error.message);
       process.exit(1);
     }
   });
