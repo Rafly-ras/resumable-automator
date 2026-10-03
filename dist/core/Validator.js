@@ -91,33 +91,31 @@ class CodebaseVerifier {
      */
     isTaskImplementedInCodebase(sectionTitle, taskText) {
         const layer = this.getTaskLayer(taskText);
-        const combined = `${sectionTitle} ${taskText}`.toLowerCase();
         const files = this.getAllProjectFiles();
-        // 1. Ekstrak kata kunci entity utama
-        const cleaned = combined
-            .replace(/menu\s*\d+/gi, '')
-            .replace(/[^\w\s]/gi, ' ')
-            .trim();
         const stopWords = new Set([
             'menu', 'tahap', 'fondasi', 'dasar', 'lanjutan', 'lengkap', 'master', 'project',
             'seluruh', 'isi', 'trd', 'pada', 'dan', 'dengan', 'untuk', 'yang', 'dalam', 'fitur',
             'halaman', 'alur', 'proses', 'validasi', 'kriteria', 'penutupan', 'in', 'scope', 'out', 'tabel', 'model',
-            'frontend', 'backend', 'routing', 'acceptance', 'criteria', 'crud', 'bulk', 'action'
+            'frontend', 'backend', 'routing', 'acceptance', 'criteria', 'crud', 'bulk', 'action', 'relasi'
         ]);
-        let keywords = cleaned.split(/\s+/).filter((w) => w.length > 2 && !stopWords.has(w.toLowerCase()));
-        // Jika kata kunci dari item spesifik terfilter oleh stopWords (seperti "relasi dasar"), gunakan entity dari sectionTitle
-        if (keywords.length === 0 && sectionTitle) {
-            const cleanedSection = sectionTitle
-                .replace(/menu\s*\d+/gi, '')
-                .replace(/[^\w\s]/gi, ' ')
-                .trim();
-            keywords = cleanedSection.split(/\s+/).filter((w) => w.length > 2 && !stopWords.has(w.toLowerCase()));
+        // 1. Ekstrak kata kunci entity utama dari sectionTitle dan taskText
+        const cleanedTask = taskText.replace(/[^\w\s]/gi, ' ').trim();
+        let taskKeywords = cleanedTask.split(/\s+/).filter((w) => w.length > 2 && !stopWords.has(w.toLowerCase()));
+        const cleanedSection = sectionTitle
+            .replace(/menu\s*\d+/gi, '')
+            .replace(/[^\w\s]/gi, ' ')
+            .trim();
+        const sectionKeywords = cleanedSection.split(/\s+/).filter((w) => w.length > 2 && !stopWords.has(w.toLowerCase()));
+        // Gabungkan kata kunci (prioritaskan section entity jika taskKeywords kosong atau berisi istilah umum)
+        let targetKeywords = taskKeywords.length > 0 ? taskKeywords : sectionKeywords;
+        if (targetKeywords.length === 0) {
+            targetKeywords = sectionKeywords;
         }
-        if (keywords.length === 0) {
+        if (targetKeywords.length === 0) {
             return false;
         }
-        // 2. Strict Check per Layer (Tanpa Loose Fallback)
-        for (const kw of keywords) {
+        // 2. Strict Check per Layer: Cek apakah ada file entity yang sesuai di folder layer
+        for (const kw of targetKeywords) {
             const kwLower = kw.toLowerCase();
             const match = files.some((filePath) => {
                 const baseName = path.basename(filePath).toLowerCase();
@@ -126,7 +124,6 @@ class CodebaseVerifier {
                     return false;
                 }
                 if (layer === 'FE') {
-                    // Strict FE Check: Harus berada di folder views / components / blade
                     return (relPath.includes('views') ||
                         relPath.includes('components') ||
                         baseName.endsWith('.blade.php') ||
@@ -134,13 +131,11 @@ class CodebaseVerifier {
                         baseName.endsWith('.jsx'));
                 }
                 else if (layer === 'DB') {
-                    // Strict DB Check: Harus berada di folder migrations / seeders / routes
                     return (relPath.includes('migrations') ||
                         relPath.includes('seeders') ||
                         relPath.includes('routes'));
                 }
                 else {
-                    // Strict BE Check: Harus berupa Controller, Model, Service, Request, Policy
                     return (relPath.includes('controllers') ||
                         relPath.includes('models') ||
                         relPath.includes('services') ||
@@ -150,6 +145,30 @@ class CodebaseVerifier {
             });
             if (match) {
                 return true;
+            }
+        }
+        // 3. Fallback ke Section Entity jika taskSpecific file belum ketemu (misal: "Relasi dasar" di bawah Menu 19 Enrollment)
+        if (sectionKeywords.length > 0) {
+            for (const skw of sectionKeywords) {
+                const skwLower = skw.toLowerCase();
+                const matchSection = files.some((filePath) => {
+                    const baseName = path.basename(filePath).toLowerCase();
+                    const relPath = path.relative(this.projectRoot, filePath).toLowerCase().replace(/\\/g, '/');
+                    if (!baseName.includes(skwLower) && !relPath.includes(skwLower))
+                        return false;
+                    if (layer === 'FE') {
+                        return relPath.includes('views') || relPath.includes('components') || baseName.endsWith('.blade.php');
+                    }
+                    else if (layer === 'DB') {
+                        return relPath.includes('migrations') || relPath.includes('seeders') || relPath.includes('routes');
+                    }
+                    else {
+                        return relPath.includes('controllers') || relPath.includes('models') || relPath.includes('services');
+                    }
+                });
+                if (matchSection) {
+                    return true;
+                }
             }
         }
         return false;
