@@ -35,10 +35,6 @@ const IGNORED_FILE_NAMES = new Set([
   'notes.md',
 ]);
 
-function stripCodeBlocks(markdownContent: string): string {
-  return markdownContent.replace(/(```|~~~)[[\s\S]*?\1/g, '');
-}
-
 export class Orchestrator {
   /**
    * Rekursif mencari semua file .md di direktori proyek, mengabaikan folder & file blacklist/template.
@@ -105,74 +101,31 @@ export class Orchestrator {
   }
 
   /**
-   * Memotong dokumen Markdown menjadi VirtualPhase berdasarkan HEADING (# s/d ######).
-   * Hanya memotong pada level Heading 1 atau 2 (# atau ##) untuk fase utama agar tidak terlalu terfragmentasi.
+   * Membaca file Markdown fase. Setiap file di folder fase dianggap 1 VirtualPhase yang utuh.
    */
   async parseMarkdownFile(filePath: string): Promise<VirtualPhase[]> {
     const rawContent = await fs.readFile(filePath, 'utf-8');
-    const lines = rawContent.split(/\r?\n/);
-    const phases: VirtualPhase[] = [];
+    const firstLine = rawContent.split(/\r?\n/)[0] || '';
+    let title = path.basename(filePath, '.md');
 
-    // Hanya potong pada Heading level 1 & 2 (# Phase N atau ## Title)
-    const phaseHeadingRegex = /^(#{1,2})\s+(.+)$/;
-
-    let currentTitle: string | null = null;
-    let currentHeadingLevel = 1;
-    let currentLines: string[] = [];
-
-    for (const line of lines) {
-      const match = line.match(phaseHeadingRegex);
-      if (match) {
-        if (currentTitle !== null) {
-          const content = currentLines.join('\n').trim();
-          if (content.length > 0) {
-            phases.push({
-              filePath,
-              title: currentTitle,
-              content,
-              headingLevel: currentHeadingLevel,
-            });
-          }
-        }
-        currentHeadingLevel = match[1].length;
-        currentTitle = match[2].trim();
-        currentLines = [line];
-      } else {
-        if (currentTitle !== null) {
-          currentLines.push(line);
-        } else {
-          currentLines.push(line);
-        }
-      }
+    if (firstLine.startsWith('#')) {
+      title = firstLine.replace(/^#+\s*/, '').trim();
     }
 
-    if (currentTitle !== null) {
-      const content = currentLines.join('\n').trim();
-      if (content.length > 0) {
-        phases.push({
-          filePath,
-          title: currentTitle,
-          content,
-          headingLevel: currentHeadingLevel,
-        });
-      }
-    }
-
-    if (phases.length === 0 && rawContent.trim().length > 0) {
-      phases.push({
+    return [
+      {
         filePath,
-        title: path.basename(filePath, '.md'),
+        title,
         content: rawContent.trim(),
         headingLevel: 1,
-      });
-    }
-
-    return phases;
+      },
+    ];
   }
 
   /**
    * Dedicated Phase Loader:
-   * Memuat file fase asli (misalnya 8 file di docs/phases/) tanpa bercampur dengan file referensi spesifikasi TRD.
+   * Memuat file fase asli secara tepat (misalnya 8 file di docs/phases/)
+   * tanpa bercampur dengan ratusan file spesifikasi TRD.
    */
   async loadPhasesFromProject(projectRoot: string = process.cwd()): Promise<VirtualPhase[]> {
     const rawFiles = this.findMarkdownFilesRecursively(projectRoot);

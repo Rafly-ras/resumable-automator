@@ -19,12 +19,18 @@ async function getPhases(): Promise<VirtualPhase[]> {
 
 /**
  * Helper Auto-Sync:
- * Otomatis melompati (Fast-Forward) fase-fase yang 100% selesai
+ * Otomatis memvalidasi batas state dan melompati (Fast-Forward) fase-fase yang 100% selesai
  * sehingga CLI mendarat pada fase aktif yang memerlukan pengerjaan.
  */
 async function ensureAutoSyncedState(): Promise<{ state: AutomatorState; phases: VirtualPhase[] }> {
   let state = await stateManager.loadState();
   const phases = await getPhases();
+
+  // Jika index state out of bounds (misal bekas state 607 lama), reset index ke 0
+  if (state.currentPhaseIndex >= phases.length) {
+    state.currentPhaseIndex = 0;
+    await stateManager.saveState(state);
+  }
 
   let skippedCount = 0;
 
