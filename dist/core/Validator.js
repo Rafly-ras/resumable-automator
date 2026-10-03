@@ -3,9 +3,11 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.Validator = void 0;
 class Validator {
     /**
-     * Menganalisis konten Markdown dan mengekstrak tugas:
-     * 1. GFM Checkbox (- [ ] dan - [x])
-     * 2. Bullet list items (- Item, * Item) jika tidak ada GFM checkbox
+     * Menganalisis konten Markdown dan mengekstrak tugas berdasarkan GFM Task List (- [ ] dan - [x]):
+     * - [x] = Tugas selesai (Completed)
+     * - [ ] = Tugas pending (Uncompleted)
+     * Jika sebuah bagian hanya berisi bullet point teks deskriptif (tanpa kotak centang [ ] / [x]),
+     * bagian tersebut dianggap informasi ruang lingkup (0 pending tasks) dan tidak memblokir auto-sync.
      */
     validateContent(content) {
         const gfmRegex = /^\s*[-*+]\s*\[([ xX])\]\s*(.+)$/gm;
@@ -13,7 +15,6 @@ class Validator {
         let completedTasks = 0;
         const pendingTasks = [];
         let match;
-        // 1. Coba GFM Checkboxes dahulu
         while ((match = gfmRegex.exec(content)) !== null) {
             totalTasks++;
             const isChecked = match[1].toLowerCase() === 'x';
@@ -23,22 +24,6 @@ class Validator {
             }
             else {
                 pendingTasks.push(taskText);
-            }
-        }
-        // 2. Jika tidak ada GFM Checkbox, ambil list item bullet (- Item, * Item)
-        if (totalTasks === 0) {
-            const bulletRegex = /^\s*[-*+]\s+(?!\s*\[)(.+)$/gm;
-            while ((match = bulletRegex.exec(content)) !== null) {
-                const itemText = match[1].trim();
-                // Abaikan header atau meta baris sejenis **Tujuan** atau **Dependency**
-                if (itemText &&
-                    !itemText.startsWith('#') &&
-                    !itemText.startsWith('**Tujuan') &&
-                    !itemText.startsWith('**Dependency') &&
-                    !itemText.startsWith('**Referensi')) {
-                    totalTasks++;
-                    pendingTasks.push(itemText);
-                }
             }
         }
         const progressPercentage = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 100;

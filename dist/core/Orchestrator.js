@@ -62,6 +62,8 @@ const IGNORED_FILE_NAMES = new Set([
 ]);
 // Known phase & task directory patterns to prioritize
 const PHASE_DIR_PATTERNS = ['phases', 'trd', 'tasks', 'specs', 'roadmap', 'docs'];
+// Regex universal untuk mengecek GFM Task List (- [ ] atau - [x])
+const GFM_TASK_REGEX = /^\s*[-*+]\s*\[[ xX]\]/m;
 function stripCodeBlocks(markdownContent) {
     return markdownContent.replace(/(```|~~~)[[\s\S]*?\1/g, '');
 }
@@ -118,16 +120,10 @@ class Orchestrator {
     }
     /**
      * Memotong dokumen Markdown menjadi VirtualPhase berdasarkan HEADING (# s/d ######).
-     * Mendukung GFM Checkbox (- [ ] / - [x]) DAN List items (- Item).
      */
     async parseMarkdownFile(filePath) {
         const rawContent = await fs.readFile(filePath, 'utf-8');
         const contentClean = stripCodeBlocks(rawContent);
-        // Cek apakah ada tugas berupa GFM checklist ATAU list item (- / * / 1.)
-        const hasTasksOrLists = /^\s*[-*+]\s*(\[[ xX]\]|.+)/m.test(contentClean);
-        if (!hasTasksOrLists) {
-            return [];
-        }
         const lines = rawContent.split(/\r?\n/);
         const phases = [];
         const anyHeadingRegex = /^(#{1,6})\s+(.+)$/;
@@ -180,10 +176,10 @@ class Orchestrator {
                 headingLevel: 1,
             });
         }
-        return phases.filter((p) => /^\s*[-*+]\s*(\[[ xX]\]|.+)/m.test(stripCodeBlocks(p.content)));
+        return phases;
     }
     /**
-     * Ekstrem Robustness Loader:
+     * Universal Phase Loader:
      * 1. Mencari seluruh file .md di proyek.
      * 2. Mengabaikan file metadata / template (PULL_REQUEST_TEMPLATE.md, AGENTS.md, README.md, dll).
      * 3. Memprioritaskan file dari folder fase (docs/phases, TRD, tasks, dll).
