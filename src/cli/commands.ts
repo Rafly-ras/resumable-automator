@@ -145,27 +145,28 @@ program
 program
   .command('jump <target>')
   .alias('goto')
-  .description('Pindah langsung ke fase tertentu (contoh: npx automator jump 6 atau npx automator jump fase-5)')
+  .description('Pindah langsung ke fase tertentu (contoh: npx automator jump fase-5 atau npx automator jump 6)')
   .action(async (target: string) => {
     try {
       const phases = await getPhases();
       let targetIndex = -1;
 
-      if (/^\d+$/.test(target)) {
+      // 1. Cari berdasarkan pencocokan nama file (misal: "fase-5")
+      const query = target.toLowerCase();
+      targetIndex = phases.findIndex(
+        (p) =>
+          path.basename(p.filePath).toLowerCase().includes(query) ||
+          p.title.toLowerCase().includes(query)
+      );
+
+      // 2. Jika tidak cocok nama file, periksa apakah target berupa nomor angka
+      if (targetIndex === -1 && /^\d+$/.test(target)) {
         const num = parseInt(target, 10);
-        // Mengakomodasi 1-indexed (1..N) atau 0-indexed (0..N-1)
         if (num >= 1 && num <= phases.length) {
           targetIndex = num - 1;
         } else if (num >= 0 && num < phases.length) {
           targetIndex = num;
         }
-      } else {
-        const query = target.toLowerCase();
-        targetIndex = phases.findIndex(
-          (p) =>
-            p.title.toLowerCase().includes(query) ||
-            path.basename(p.filePath).toLowerCase().includes(query)
-        );
       }
 
       if (targetIndex === -1) {
@@ -187,6 +188,22 @@ program
       console.log(`📁 File Source: ${path.basename(active.filePath)}\n`);
     } catch (error: any) {
       console.error('❌ Error jumping phase:', error.message);
+      process.exit(1);
+    }
+  });
+
+program
+  .command('reset')
+  .description('Reset state automator kembali ke Fase 0 (Fase Pertama)')
+  .action(async () => {
+    try {
+      const state = await stateManager.loadState();
+      state.currentPhaseIndex = 0;
+      await stateManager.saveState(state);
+      const phases = await getPhases();
+      console.log(`\n🔄 State automator berhasil di-reset ke Fase 1 dari ${phases.length}: "${phases[0].title}"\n`);
+    } catch (error: any) {
+      console.error('❌ Error resetting state:', error.message);
       process.exit(1);
     }
   });
