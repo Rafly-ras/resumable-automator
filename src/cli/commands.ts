@@ -66,7 +66,7 @@ program
 
 program
   .command('status')
-  .description('Cek status orchestrator dan tugas fase aktif')
+  .description('Cek status orchestrator dan struktur kodenya pada fase aktif')
   .action(async () => {
     try {
       const { state, phases } = await getValidState();
@@ -84,8 +84,13 @@ program
       console.log(`📌 Job ID          : ${state.jobId}`);
       console.log(`🎯 Fase Aktif      : ${activePhase.title} [Fase ${state.currentPhaseIndex + 1} dari ${phases.length}]`);
       console.log(`📁 File Source     : ${activePhase.filePath}`);
-      console.log(`📈 Progress        : ${validation.progressPercentage}%`);
-      console.log(`✅ Tugas Selesai   : ${validation.completedTasks} / ${validation.totalTasks}`);
+      console.log('--------------------------------------------------');
+      console.log(`🎨 Frontend Code (FE)  : ${validation.feProgress}%`);
+      console.log(`⚙️ Backend Code (BE)   : ${validation.beProgress}%`);
+      console.log(`🗄️ Database & Routes   : ${validation.dbProgress}%`);
+      console.log('--------------------------------------------------');
+      console.log(`📈 Progress Total      : ${validation.progressPercentage}%`);
+      console.log(`✅ Tugas Selesai      : ${validation.completedTasks} / ${validation.totalTasks}`);
 
       if (validation.pendingTasks.length > 0) {
         console.log('\n⏳ Task Pending:');
@@ -104,7 +109,7 @@ program
 
 program
   .command('next')
-  .description('Lanjutkan ke fase berikutnya (Hard Blocker jika ada task pending)')
+  .description('Lanjutkan ke fase berikutnya (Hard Blocker jika task pending)')
   .action(async () => {
     try {
       const state = await stateManager.loadState();
@@ -121,13 +126,14 @@ program
       // Blokir transisi jika masih ada tugas yang pending (progress < 100%)
       if (validation.progressPercentage < 100 && validation.pendingTasks.length > 0) {
         console.error('\n⛔ EXECUTION FAILED: Transisi Fase Ditolak!');
-        console.error(`Progression saat ini: ${validation.progressPercentage}% (${validation.completedTasks}/${validation.totalTasks} tugas completed)`);
+        console.error(`Progression Total: ${validation.progressPercentage}% (${validation.completedTasks}/${validation.totalTasks} tugas completed)`);
+        console.error(`🎨 Frontend (FE): ${validation.feProgress}% | ⚙️ Backend (BE): ${validation.beProgress}% | 🗄️ Database: ${validation.dbProgress}%`);
         console.error(`File Source: ${path.basename(activePhase.filePath)}`);
         console.error('\nTugas yang masih PENDING:');
         validation.pendingTasks.forEach((task, idx) => {
           console.error(` ❌ [ ] ${task}`);
         });
-        console.error('\nTandai tugas dengan [- [x]] atau selesaikan tugas sebelum melanjut ke fase berikutnya.\n');
+        console.error('\nLengkapi kode backend/frontend/database yang pending sebelum melanjut ke fase berikutnya.\n');
         process.exit(1);
       }
 
@@ -145,13 +151,13 @@ program
 program
   .command('jump <target>')
   .alias('goto')
-  .description('Pindah langsung ke fase tertentu (contoh: npx automator jump fase-5 atau npx automator jump 6)')
+  .description('Pindah langsung ke fase tertentu (contoh: npx automator jump fase-4 atau npx automator jump 5)')
   .action(async (target: string) => {
     try {
       const phases = await getPhases();
       let targetIndex = -1;
 
-      // 1. Cari berdasarkan pencocokan nama file (misal: "fase-5")
+      // 1. Cari berdasarkan pencocokan nama file (misal: "fase-4" atau "fase-5")
       const query = target.toLowerCase();
       targetIndex = phases.findIndex(
         (p) =>
