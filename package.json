@@ -1,0 +1,28 @@
+{
+  "name": "resumable-automator",
+  "version": "1.0.0",
+  "description": "AI Gatekeeper & Stateful Task Orchestrator",
+  "main": "dist/cli/commands.js",
+  "bin": {
+    "automator": "bin/automator.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "prepublishOnly": "npm run build",
+    "start": "node bin/automator.js"
+  },
+  "files": [
+    "bin",
+    "dist"
+  ],
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "commander": "^12.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0"
+  }
+}
