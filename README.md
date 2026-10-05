@@ -21,17 +21,10 @@
 
 Tidak perlu clone repository! Cukup jalankan perintah instalasi berikut di terminal Anda:
 
-### Instalasi Global (Rekomendasi)
+### Instalasi 
 ```bash
-npm install -g github:Rafly-ras/resumable-automator
+npm install resumable-automator
 ```
-
-### Instalasi Lokal per Proyek
-```bash
-npm install github:Rafly-ras/resumable-automator
-```
-
----
 
 ## 🚀 Perintah CLI
 
